@@ -10,12 +10,21 @@
 #include "point.h"
 
 #define MAXN 1000
+#define NEAREST 100
+#define RANGE 10
 
 uint16_t N;
 Point P[MAXN];
 uint32_t D[MAXN][MAXN];
 
 std::chrono::time_point<std::chrono::system_clock> START_TIME;
+
+void outputRoute(const std::vector<uint16_t> &route)
+{
+	for (uint16_t i : route) {
+		std::cout << i << "\n";
+    }
+}
 
 double elapsedTime()
 {
@@ -36,7 +45,32 @@ uint32_t calculateRoute(const std::vector<uint16_t> &route)
 	return sum;
 }
 
-std::vector<uint16_t> selectNearest(uint16_t p, uint16_t n)
+std::vector<uint16_t> getNearestSimple(uint16_t p, uint16_t n)
+{
+	bool used[MAXN];
+	std::vector<uint16_t> near;
+
+	memset(used, 0, sizeof(bool) * N);
+	used[p] = true;
+	for (uint16_t k = 0; k < n; ++k) {
+		uint16_t minInd;
+		uint32_t minDist = std::numeric_limits<uint32_t>::max();
+
+		for (uint16_t i = 0; i < N; ++i) {
+			if (!used[i] && D[p][i] < minDist) {
+				minInd = i;
+				minDist = D[p][i];
+			}
+		}
+
+		used[minInd] = true;
+		near.push_back(minInd);
+	}
+
+	return near;
+}
+
+std::vector<uint16_t> getNearestQuick(uint16_t p, uint16_t n)
 {
 	std::vector<uint16_t> near;
 	for (uint16_t i = 0; i < N; ++i)
@@ -46,30 +80,57 @@ std::vector<uint16_t> selectNearest(uint16_t p, uint16_t n)
 	if (N <= n)
 		return near;
 
-	auto left = near.begin();
-	auto right = near.end();
+	uint16_t left = 0;
+	uint16_t right = N;
 
-	// quickselect to get the nearest n on the left
-	// they don't have to be sorted because all n nearest will be considered
-	while (true) {
-		uint16_t ind = (left + std::rand() % (right - left)) - near.begin();
-		auto closerThanInd = [p,ind](uint16_t a) {
-			return D[p][a] < D[p][ind];
+	while (right - left > RANGE) {
+		uint16_t ind = left + std::rand() % (right - left);
+
+		auto closerThan = [p, ind, &near](uint16_t a) {
+			return D[p][a] < D[p][near[ind]];
 		};
+		auto it = std::partition(near.begin() + left, near.begin() + right, closerThan);
 
-		auto it = std::partition(left, right, closerThanInd);
+		ind = it - near.begin(); // ind == number of smallest elements on the left
 
-		ind = it - near.begin();
-		if (ind == n) {
-			break;
+		if (ind > n) {
+			right = ind;
 		} else if (ind < n) {
-			left = it + 1;
+			left = ind;
 		} else {
-			right = it;
+			left = n;
+			break;
 		}
 	}
 
-	return std::vector<uint16_t>(near.begin(), near.begin() + n);
+	// now, in the vector 'near' we have:
+	// - all the smallest elements from the start up until 'left'-1 (exactly 'left' elements)
+	// - all the largest elements from 'right' until the end
+	// - the middle elements from left to right-1
+	// also, left <= n < right
+	// and right - left <= RANGE
+
+	// we already have 'left' smallest elements at the start
+	// the rest are between 'left' and 'right-1'
+	// we get them using a simple algorithm
+	for (uint16_t i = left; i < n; ++i) {
+		uint16_t minJ = -1;
+		uint32_t minDist = std::numeric_limits<uint32_t>::max();
+
+		for (uint16_t j = i; j < right; ++j) {
+			if (D[p][near[j]] < minDist) {
+				minJ = j;
+				minDist = D[p][near[j]];
+			}
+		}
+
+		std::swap(near[i], near[minJ]);
+	}
+
+	// resize 'near' to the first n
+	near.resize(n);
+
+	return near;
 }
 
 std::vector<uint16_t> constructRouteNN()
@@ -126,7 +187,7 @@ std::vector<uint16_t> constructRouteGreedy()
 	}
 
 	_Point points[MAXN];
-	std::memset(points, 0, sizeof(points));
+	std::memset(points, 0, sizeof(_Point) * N);
 	for (uint16_t nLeft = N; nLeft > 0; pq.pop()) {
 		_Edge e = pq.top();
 		_Point &pa = points[e.a];
@@ -176,39 +237,96 @@ std::vector<uint16_t> constructRouteGreedy()
 
 void improveRoute2opt(std::vector<uint16_t> &route)
 {
-	//std::vector<uint16_t> near = selectNearest(0, 5);
-	//for (auto n : near) std::cerr << n << " ";
-	//std::cerr << std::endl;return;
+	struct _Point {
+		uint16_t ind;
+		uint16_t prev, next;
+		uint32_t dprev, dnext;
+	} points[MAXN];
+
+//	double DT;
+//	double DT2;
+//	double DTpre = 0;
+//	double DTloop = 0;
+//	double DTnear = 0;
+//	double DTrev = 0;
+//	double DTtot = elapsedTime();
+
+//	DT = elapsedTime();
+	std::vector<std::vector<uint16_t> > near;
+	for (uint16_t i = 0; i < N; ++i) {
+		near.push_back(getNearestQuick(i, NEAREST));
+	}
+//	DTnear += elapsedTime() - DT;
 
 	while (true) {
-		int32_t bestImprove = 0;
+		int32_t bestImprovement = 0;
 		int32_t improvement;
 		uint16_t impI, impJ;
 
-		for (uint16_t i = 0; i < N-1; ++i) {
-			for (uint16_t j = i+1; j < N; ++j) {
-				improvement = D[route[i]][route[i+1]] + D[route[j]][route[(j+1)%N]]
-				    - D[route[i]][route[j]] - D[route[i+1]][route[(j+1)%N]];
+//		DT = elapsedTime();
+		for (uint16_t i = 0; i < N; ++i) {
+			uint16_t prev = route[ i == 0 ? N-1 : i-1 ];
+			uint16_t now = route[i];
+			uint16_t next = route[ i == N-1 ? 0 : i+1 ];
 
-				if (improvement > bestImprove) {
-					bestImprove = improvement;
-					impI = i;
-					impJ = j;
+			points[now].ind = i;
+			points[now].prev = prev;
+			points[now].next = next;
+			points[now].dprev = D[now][prev];
+			points[now].dnext = D[now][next];
+		}
+//		DTpre += elapsedTime() - DT;
+
+//		DT = elapsedTime();
+		for (uint16_t i : route) {
+			for (uint16_t n : near[i]) {
+				const _Point &pi = points[i];
+				const _Point &pn = points[n];
+
+				if (n == pi.prev || n == pi.next)
+					continue;
+
+				if (D[i][n] < std::max(pi.dprev, pi.dnext)) {
+					improvement = pi.dprev + pn.dprev - D[i][n] - D[pi.prev][pn.prev];
+					if (improvement > bestImprovement) {
+						bestImprovement = improvement;
+						impI = points[pi.prev].ind;
+						impJ = points[pn.prev].ind;
+					}
+
+					improvement = pi.dnext + pn.dnext - D[i][n] - D[pi.next][pn.next];
+					if (improvement > bestImprovement) {
+						bestImprovement = improvement;
+						impI = pi.ind;
+						impJ = pn.ind;
+					}
 				}
 			}
 		}
+//		DTloop += elapsedTime() - DT;
 
-		if (bestImprove > 0){
+//		DT = elapsedTime();
+		if (bestImprovement > 0){
+			if (impJ < impI)
+				std::swap(impI, impJ);
+
 			auto rb = route.begin() + impI + 1;
 			auto re = route.begin() + impJ + 1;
 			std::reverse(rb, re);
 		} else {
 			break;
 		}
+//		DTrev += elapsedTime() - DT;
 
 		if (elapsedTime() > 1.9)
 			break;
 	};
+
+//	std::cerr << "near " << DTnear << std::endl;
+//	std::cerr << "pre " << DTpre << std::endl;
+//	std::cerr << "loop " << DTloop << std::endl;
+//	std::cerr << "rev " << DTrev << std::endl;
+//	std::cerr << "total 2opt time " << elapsedTime() - DTtot << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -282,10 +400,9 @@ int main(int argc, char **argv)
 		return 2;
 		break;
 	}
+
     // output the route
-    for (uint16_t i : route) {
-		std::cout << i << "\n";
-    }
+    outputRoute(route);
 
     // output the distance
     if (alg != 'b')
