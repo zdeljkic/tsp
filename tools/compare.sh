@@ -40,11 +40,15 @@ do
 done
 
 echo
-echo 'Testing nearest neighbor algorithm:'
+echo 'Testing nearest neighbor:'
 testTSP $2 n
 
 echo
-echo 'Testing greedy algorithm:'
+echo 'Testing greedy:'
 testTSP $2 g
+
+echo
+echo 'Testing greedy + 2opt:'
+testTSP $2 2
 
 rm testIn*.txt

@@ -6,12 +6,12 @@ y(y)
 {
 }
 
-unsigned int Point::dist(const Point& a, const Point& b)
+uint32_t Point::dist(const Point& a, const Point& b)
 {
 	float dx2 = (a.x - b.x) * (a.x - b.x);
 	float dy2 = (a.y - b.y) * (a.y - b.y);
 
-	return (unsigned int) (std::sqrt(dx2 + dy2) + 0.5f);
+	return (uint32_t) (std::sqrt(dx2 + dy2) + 0.5f);
 }
 
 std::istream &operator>>(std::istream &stream, Point &point)

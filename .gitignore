@@ -1,5 +1,7 @@
 *~
 *.layout
+*.depend
+/tsp/in.txt
 /tsp/bin/*
 /tsp/obj/*
 /testgen/bin/*
