@@ -38,9 +38,9 @@ testTSP()
 	rm time.txt
 }
 
-if [ $# != 2 ]
+if [ $# != 2 -a $# != 3 ]
 then
-	echo 'Usage: $0 number_of_test_samples number_of_test_repetitions'
+	echo 'Usage: $0 number_of_test_samples number_of_test_repetitions [best]'
 	exit 1
 fi
 
@@ -50,16 +50,31 @@ do
 	$TESTGEN_BIN $1 > testIn$i.txt
 done
 
-echo
-echo 'Testing nearest neighbor:'
-testTSP $2 n
+if [ $# != 3 ]
+then
+	echo
+	echo 'Testing nearest neighbor:'
+	testTSP $2 n
+
+	echo
+	echo 'Testing greedy:'
+	testTSP $2 g
+
+	echo
+	echo 'Testing randomized greedy:'
+	testTSP $2 G
+
+	echo
+	echo 'Testing greedy + 2opt:'
+	testTSP $2 1
+
+	echo
+	echo 'Testing randomized greedy + 2opt:'
+	testTSP $2 2
+fi
 
 echo
-echo 'Testing greedy:'
-testTSP $2 g
-
-echo
-echo 'Testing greedy + 2opt:'
-testTSP $2 2
+echo 'Testing iterative randomized greedy + 2opt:'
+testTSP $2 3
 
 rm testIn*.txt

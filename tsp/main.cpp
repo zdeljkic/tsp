@@ -7,11 +7,46 @@
 #include <limits>
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
 #include "point.h"
 
+/*
+ * Algorithm parameters:
+ *  > MAXN
+ *    - maximum number of cities
+ *  > NEAREST
+ *    - 2opt should should search NEAREST nearest neighbors of a city for a good move
+ *    - recommended range: between 5 and 200
+ *    - time vs tour quality tradeoff, less neighbors -> faster but worse quality
+ *  > PERCENTAGE
+ *    - in greedy, choose the best edge with PERCENTAGE chance, and the second best with 1 - PERCENTAGE
+ *    - needed when different starting tours need to be generated
+ *    - recommended range: around ??? seems to work well
+ *    - lower value -> more variations, but of lesser quality, also slower!
+ *  > RANGE
+ *    - at what range to jump out of quickselect and use a simple linear algorithm
+ *    - recommended range: 2 - 20
+ */
 #define MAXN 1000
-#define NEAREST 100
+#define NEAREST (N / 5)
+#define PERCENTAGE 1.0 - 1.0/20.0
 #define RANGE 10
+
+/*
+ * Algorithm time parameters:
+ *  > TIME_MAX
+ *    - maximum time the program is allowed to run
+ *  > TIME_2OPT_SAFETY
+ *    - if there is still TIME_2OPT_SAFETY time left, do another iteration of 2opt
+ *    - otherwise leave and output the result
+ *  > TIME_ITER_SAFETY_FAC & _CONST
+ *    - iteration safety factor, when iterating the average iteration time is calculated
+ *    - if there is still ..._FAC * average_iteration_time + ..._CONST left, do another iteration
+ */
+#define TIME_MAX 2.0
+#define TIME_2OPT_SAFETY 0.1
+#define TIME_ITER_SAFETY_FAC 1.2
+#define TIME_ITER_SAFETY_CONST 0.25
 
 uint16_t N;
 Point P[MAXN];
@@ -81,7 +116,7 @@ std::vector<uint16_t> getNearestQuick(uint16_t p, uint16_t n)
 		return near;
 
 	uint16_t left = 0;
-	uint16_t right = N;
+	uint16_t right = N - 1;
 
 	while (right - left > RANGE) {
 		uint16_t ind = left + std::rand() % (right - left);
@@ -159,7 +194,7 @@ std::vector<uint16_t> constructRouteNN()
 	return route;
 }
 
-std::vector<uint16_t> constructRouteGreedy()
+std::vector<uint16_t> constructRouteGreedy(double p)
 {
 	struct _Edge
 	{
@@ -188,8 +223,23 @@ std::vector<uint16_t> constructRouteGreedy()
 
 	_Point points[MAXN];
 	std::memset(points, 0, sizeof(_Point) * N);
-	for (uint16_t nLeft = N; nLeft > 0; pq.pop()) {
+
+	_Edge other = pq.top();
+	pq.pop();
+
+	for (uint16_t nLeft = N; nLeft > 0; ) {
 		_Edge e = pq.top();
+		pq.pop();
+
+		// randomization:
+		// - with chance p we pick the best edge
+		// - and with chance 1-p the second best
+		if (!pq.empty() && ((double) std::rand() / RAND_MAX) > p) {
+			_Edge tmp = e;
+			e = other;
+			other = tmp;
+		}
+
 		_Point &pa = points[e.a];
 		_Point &pb = points[e.b];
 
@@ -318,7 +368,7 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 		}
 //		DTrev += elapsedTime() - DT;
 
-		if (elapsedTime() > 1.9)
+		if (elapsedTime() > TIME_MAX - TIME_2OPT_SAFETY)
 			break;
 	};
 
@@ -329,10 +379,48 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 //	std::cerr << "total 2opt time " << elapsedTime() - DTtot << std::endl;
 }
 
+std::vector<uint16_t> iterate2opt()
+{
+	double avgIterTime = 0;
+	uint32_t iterN = 0;
+
+	std::vector<uint16_t> bestRoute;
+	uint32_t bestDist = std::numeric_limits<uint32_t>::max();
+
+	while (elapsedTime() + TIME_ITER_SAFETY_FAC * avgIterTime  + TIME_ITER_SAFETY_CONST < TIME_MAX ) {
+		double time = elapsedTime();
+
+		std::vector<uint16_t> routeNew(constructRouteGreedy(PERCENTAGE));
+
+//		uint32_t DBG_GD = calculateRoute(routeNew);//DEBUG
+
+		improveRoute2opt(routeNew);
+		uint32_t dist = calculateRoute(routeNew);
+		++iterN;
+
+		if (dist < bestDist) {
+			bestRoute = routeNew;
+			bestDist = dist;
+		}
+
+		time = elapsedTime() - time;
+		avgIterTime = ((iterN - 1)*avgIterTime + time) / iterN;
+
+//		std::cerr << "Iteracija " << iterN << ":\ngreedy dist: " << DBG_GD;
+//		std::cerr << "\ndist = " << dist << "\nbestDist = " << bestDist;
+//		std::cerr << "\ntime = " << time << "\navgIterTime = " << avgIterTime << std::endl << std::endl;
+	}
+
+	return bestRoute;
+}
+
 int main(int argc, char **argv)
 {
 	// start the timer
 	START_TIME = std::chrono::system_clock::now();
+
+	// srand
+	//std::srand(std::time(0));
 
 	// parse input arg choosing the algorithm
 	char alg = '\0';
@@ -340,8 +428,10 @@ int main(int argc, char **argv)
 		alg = 'b';
 	} else if (argc == 2) {
 		switch (argv[1][0]) {
-		case 'g':
 		case 'n':
+		case 'g':
+		case 'G':
+		case '1':
 		case '2':
 		case '3':
 		case 'N':
@@ -352,7 +442,7 @@ int main(int argc, char **argv)
 
 	if (!alg) {
 		std::cout << "Usage: " << argv[0] << " [s|alg]\n";
-		std::cout << "alg = n|g|2|3|N, no alg specified = use fastest, don't output distance (for kattis)\n";
+		std::cout << "alg = n|g|G|1|2|3|N, no alg specified = use fastest, don't output distance (for kattis)\n";
 		return 1;
 	}
 
@@ -384,12 +474,22 @@ int main(int argc, char **argv)
 		route = constructRouteNN();
 		break;
 	case 'g':
-		route = constructRouteGreedy();
+		route = constructRouteGreedy(0.0);
+		break;
+	case 'G':
+		route = constructRouteGreedy(PERCENTAGE);
+		break;
+	case '1':
+		route = constructRouteGreedy(0.0);
+		improveRoute2opt(route);
 		break;
 	case '2':
-	case 'b':
-		route = constructRouteGreedy();
+		route = constructRouteGreedy(PERCENTAGE);
 		improveRoute2opt(route);
+		break;
+	case '3':
+	case 'b':
+		route = iterate2opt();
 		break;
 	case 'N':
 		route = constructRouteNN();
