@@ -10,7 +10,7 @@ testTSP()
 
 	for i in $(seq 1 $1)
 	do
-		dist=$({ time $TSP_BIN $2 <testIn$i.txt; } 2>time.txt | tail -n 1 | cut -d ' ' -f 2)
+		dist=$({ time $TSP_BIN $2 <${k}testIn${i}.txt; } 2>time.txt | tail -n 1 | cut -d ' ' -f 2)
 		time_str=$(cat time.txt | tail -n 3 | head -n 1 | cut -f 2)
 		min=$(echo $time_str | cut -d m -f 1)
 		sec=$(echo $time_str | cut -d m -f 2 | cut -d s -f 1)
@@ -37,10 +37,13 @@ score=0
 n=0
 for k in $(seq $1 $1 1000)
 do
-	for j in $(seq 1 $2)
-	do
-		$TESTGEN_BIN $k > testIn$j.txt
-	done
+	if [ $# != 3 ]
+	then
+		for j in $(seq 1 $2)
+		do
+			$TESTGEN_BIN $k > ${k}testIn${j}.txt
+		done
+	fi
 
 	testTSP $2 g
 	gd=$avg_dist
@@ -58,4 +61,7 @@ score=$(echo "scale=3; $score / $n" | bc)
 
 echo "Average score: $score"
 
-rm testIn*.txt
+if [ $# != 3 ]
+then
+	rm *testIn*.txt
+fi

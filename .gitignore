@@ -6,3 +6,5 @@
 /tsp/obj/*
 /testgen/bin/*
 /testgen/obj/*
+/tools/*testIn*.txt
+/tools/time.txt

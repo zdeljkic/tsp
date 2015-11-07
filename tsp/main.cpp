@@ -121,11 +121,21 @@ std::vector<uint16_t> getNearestQuick(uint16_t p, uint16_t n)
 	while (right - left > RANGE) {
 		uint16_t ind = left + std::rand() % (right - left);
 
-		auto closerThan = [p, ind, &near](uint16_t a) {
-			return D[p][a] < D[p][near[ind]];
+		uint32_t indDist = D[p][near[ind]]; // omfg ko bi se sjetio da se mijenja za vrijeme partitiona
+		auto closerThan = [p, indDist, ind, &near](uint16_t a) {
+			// If all elements between left and right are equal, we will get stuck in an infinite loop
+			// that's why we need a way of ordering elements with equal distance as the index,
+			// one that does not give the same result for all elements.
+			// It is enough to differentiate between the index and others.
+			// Using this specifically will make it so that elements equally distant as the index
+			// are "smaller" than the index, while the index itself isn't smaller than itself
+			if (D[p][a] == indDist)
+				return a != near[ind];
+			else
+				return D[p][a] < indDist;
 		};
-		auto it = std::partition(near.begin() + left, near.begin() + right, closerThan);
 
+		auto it = std::partition(near.begin() + left, near.begin() + right, closerThan);
 		ind = it - near.begin(); // ind == number of smallest elements on the left
 
 		if (ind > n) {
@@ -234,7 +244,7 @@ std::vector<uint16_t> constructRouteGreedy(double p)
 		// randomization:
 		// - with chance p we pick the best edge
 		// - and with chance 1-p the second best
-		if (!pq.empty() && ((double) std::rand() / RAND_MAX) > p) {
+		if (((double) std::rand() / RAND_MAX) > p) {
 			_Edge tmp = e;
 			e = other;
 			other = tmp;
@@ -293,27 +303,18 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 		uint32_t dprev, dnext;
 	} points[MAXN];
 
-//	double DT;
-//	double DT2;
-//	double DTpre = 0;
-//	double DTloop = 0;
-//	double DTnear = 0;
-//	double DTrev = 0;
-//	double DTtot = elapsedTime();
-
-//	DT = elapsedTime();
-	std::vector<std::vector<uint16_t> > near;
-	for (uint16_t i = 0; i < N; ++i) {
-		near.push_back(getNearestQuick(i, NEAREST));
+	static std::vector<std::vector<uint16_t> > near;
+	if (near.empty()) {
+		for (uint16_t i = 0; i < N; ++i) {
+			near.push_back(getNearestQuick(i, NEAREST));
+		}
 	}
-//	DTnear += elapsedTime() - DT;
 
 	while (true) {
 		int32_t bestImprovement = 0;
 		int32_t improvement;
 		uint16_t impI, impJ;
 
-//		DT = elapsedTime();
 		for (uint16_t i = 0; i < N; ++i) {
 			uint16_t prev = route[ i == 0 ? N-1 : i-1 ];
 			uint16_t now = route[i];
@@ -325,9 +326,7 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 			points[now].dprev = D[now][prev];
 			points[now].dnext = D[now][next];
 		}
-//		DTpre += elapsedTime() - DT;
 
-//		DT = elapsedTime();
 		for (uint16_t i : route) {
 			for (uint16_t n : near[i]) {
 				const _Point &pi = points[i];
@@ -353,9 +352,7 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 				}
 			}
 		}
-//		DTloop += elapsedTime() - DT;
 
-//		DT = elapsedTime();
 		if (bestImprovement > 0){
 			if (impJ < impI)
 				std::swap(impI, impJ);
@@ -366,17 +363,10 @@ void improveRoute2opt(std::vector<uint16_t> &route)
 		} else {
 			break;
 		}
-//		DTrev += elapsedTime() - DT;
 
 		if (elapsedTime() > TIME_MAX - TIME_2OPT_SAFETY)
 			break;
 	};
-
-//	std::cerr << "near " << DTnear << std::endl;
-//	std::cerr << "pre " << DTpre << std::endl;
-//	std::cerr << "loop " << DTloop << std::endl;
-//	std::cerr << "rev " << DTrev << std::endl;
-//	std::cerr << "total 2opt time " << elapsedTime() - DTtot << std::endl;
 }
 
 std::vector<uint16_t> iterate2opt()
@@ -392,24 +382,22 @@ std::vector<uint16_t> iterate2opt()
 
 		std::vector<uint16_t> routeNew(constructRouteGreedy(PERCENTAGE));
 
-//		uint32_t DBG_GD = calculateRoute(routeNew);//DEBUG
-
 		improveRoute2opt(routeNew);
+
 		uint32_t dist = calculateRoute(routeNew);
 		++iterN;
 
 		if (dist < bestDist) {
 			bestRoute = routeNew;
 			bestDist = dist;
+//			std::cerr << "naso bolju rutu u iteraciji " << iterN << std::endl;
 		}
 
 		time = elapsedTime() - time;
 		avgIterTime = ((iterN - 1)*avgIterTime + time) / iterN;
-
-//		std::cerr << "Iteracija " << iterN << ":\ngreedy dist: " << DBG_GD;
-//		std::cerr << "\ndist = " << dist << "\nbestDist = " << bestDist;
-//		std::cerr << "\ntime = " << time << "\navgIterTime = " << avgIterTime << std::endl << std::endl;
 	}
+
+//	std::cerr << "Broj iteracija: " << iterN << std::endl;
 
 	return bestRoute;
 }
@@ -501,10 +489,9 @@ int main(int argc, char **argv)
 		break;
 	}
 
-    // output the route
-    outputRoute(route);
-
-    // output the distance
-    if (alg != 'b')
+    // output the route or distance
+    if (alg == 'b')
+		outputRoute(route);
+    else
 		std::cout << "Distance: " << calculateRoute(route) << std::endl;
 }
